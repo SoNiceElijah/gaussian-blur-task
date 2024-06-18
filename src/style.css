@@ -1,0 +1,100 @@
+body {
+  margin: 0;
+}
+
+.presentation {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+}
+
+.presentation canvas {
+  width: 100%;
+}
+
+.canvas-box {
+  flex: 1;
+  border: 1px solid #cdcdcd;
+  width: calc(100% - 30px);
+
+  justify-content: center;
+  align-items: center;
+}
+
+.controllers {
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+
+  gap: 10px;
+}
+
+.controllers button {
+  font: inherit;
+
+  border-radius: 5px;
+  border: none;
+  background-color: #3e7ae1;
+  color: white;
+  padding: 10px 20px 10px 20px;
+  cursor: pointer;
+
+  transition: 0.1s;
+}
+
+.controllers button:focus {
+  outline: solid;
+  outline-color: #000000;
+  outline-offset: 1px;
+}
+
+.controllers button:hover {
+  background-color: #2565d2;
+}
+
+.controllers button:active {
+  transition: 0s;
+  background-color: #1a63e2;
+}
+
+.controllers input[type="file"] {
+  width: 0;
+  height: 0;
+
+  position: absolute;
+  top: -1000px;
+  left: -1000px;
+
+  font-family: inherit;
+}
+
+.controllers label {
+  display: inline-block;
+
+  border-radius: 5px;
+  border: none;
+  background-color: #3e7ae1;
+  color: white;
+  padding: 10px 20px 10px 20px;
+  cursor: pointer;
+
+  transition: 0.1s;
+
+  font-family: inherit;
+}
+
+.controllers label:hover {
+  background-color: #2565d2;
+}
+
+.controllers label:active {
+  transition: 0s;
+  background-color: #1a63e2;
+}
+
+input:focus + .img-uploader-label {
+  outline: solid;
+  outline-color: #000000;
+  outline-offset: 1px;
+}

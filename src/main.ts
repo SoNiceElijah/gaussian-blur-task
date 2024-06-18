@@ -1,3 +1,5 @@
+import "./style.css";
+
 import { create } from "./messages/messages";
 import { WorkerPool } from "./pool";
 
@@ -6,11 +8,17 @@ function panic(msg?: string): never {
   throw new Error(msg ?? "CRUSH");
 }
 
-const pool = new WorkerPool("./workers/gaussianBlurWorker.ts", 1);
+const WORKER_PATH = "./workers/singleWorker.ts";
+
+const pool = new WorkerPool(WORKER_PATH);
 let imageUploading = false;
 let hasUploadedImage = false;
 
-function watchUpload(input: HTMLInputElement, canvas: HTMLCanvasElement) {
+function watchUpload(
+  input: HTMLInputElement,
+  canvas: HTMLCanvasElement,
+  blurred: HTMLCanvasElement,
+) {
   const context = canvas.getContext("2d");
   if (!context) {
     panic("Can not create canvas context!");
@@ -38,6 +46,9 @@ function watchUpload(input: HTMLInputElement, canvas: HTMLCanvasElement) {
         context.drawImage(img, 0, 0, img.width, img.height);
         hasUploadedImage = true;
         imageUploading = false;
+
+        blurred.width = 0;
+        blurred.height = 0;
       };
 
       img.onerror = () => {
@@ -128,7 +139,7 @@ function main() {
     "blurButton",
   )! as HTMLButtonElement;
 
-  watchUpload(uploader, originalImageCanvas);
+  watchUpload(uploader, originalImageCanvas, blurredImageCanvas);
   watchStart(startButton, originalImageCanvas, blurredImageCanvas);
 }
 

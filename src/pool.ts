@@ -47,8 +47,10 @@ export class WorkerPool {
         workersInProgress: this.workers.length,
         resolve,
       });
+      let i = 0;
       for (const w of this.workers) {
-        w.postMessage(create.wrapper.pool(id, msg));
+        w.postMessage(create.wrapper.pool(id, i, this.workers.length, msg));
+        ++i;
       }
     });
   }

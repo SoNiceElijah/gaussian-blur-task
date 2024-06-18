@@ -63,7 +63,10 @@ function naiveBlur(
   }
 }
 
-onmessage = receive(({ send, data }) => {
+onmessage = receive(({ send, data, info }) => {
+  if (info.workerIdx !== 0) {
+    return send(create.message.done(true));
+  }
   const found = is(data).begin((description) => {
     naiveBlur(
       description.radius,

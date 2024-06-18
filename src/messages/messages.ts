@@ -12,6 +12,8 @@ interface Message {
 interface PoolMessage {
   jobId: number;
   content: unknown;
+  workerCount: number;
+  workerIdx: number;
 }
 
 function message(type: string, payload: unknown): Message {
@@ -23,8 +25,12 @@ function message(type: string, payload: unknown): Message {
 
 export const create = {
   wrapper: {
-    pool: (jobId: number, content: unknown) =>
-      message("PoolMessage", { jobId, content }),
+    pool: (
+      jobId: number,
+      workerIdx: number,
+      workerCount: number,
+      content: unknown,
+    ) => message("PoolMessage", { jobId, content, workerIdx, workerCount }),
   },
   message: {
     done: (status: boolean) => message("DoneMessage", { status }),
