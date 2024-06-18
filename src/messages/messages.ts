@@ -34,11 +34,19 @@ export const create = {
   },
   message: {
     done: (status: boolean) => message("DoneMessage", { status }),
-    begin: (
+    beginSingle: (
       opts: BeginOptions,
       source: SharedArrayBuffer,
       destination: SharedArrayBuffer,
-    ) => message("BeginMessage", { ...opts, source, destination }),
+    ) => message("BeginSingleMessage", { ...opts, source, destination }),
+    beginCoop: (
+      opts: BeginOptions,
+      source: SharedArrayBuffer,
+      middle: SharedArrayBuffer,
+      destination: SharedArrayBuffer,
+    ) =>
+      message("BeginMultipleMessage", { ...opts, source, middle, destination }),
+    update: (chunk: number) => message("UpdateMessage", { chunk }),
   },
 };
 
@@ -46,9 +54,19 @@ interface DoneMessage {
   status: boolean;
 }
 
-interface BeginMessage extends BeginOptions {
+interface BeginSingleMessage extends BeginOptions {
   source: SharedArrayBuffer;
   destination: SharedArrayBuffer;
+}
+
+interface BeginMultipleMessage extends BeginOptions {
+  source: SharedArrayBuffer;
+  middle: SharedArrayBuffer;
+  destination: SharedArrayBuffer;
+}
+
+interface UpdateMessage {
+  chunk: number;
 }
 
 function isMessage(x: unknown): x is Message {
@@ -75,6 +93,8 @@ function runIfType<T>(arg: unknown, t: string) {
 
 export const is = (x: unknown) => ({
   done: runIfType<DoneMessage>(x, "DoneMessage"),
-  begin: runIfType<BeginMessage>(x, "BeginMessage"),
+  beginSingle: runIfType<BeginSingleMessage>(x, "BeginSingleMessage"),
+  beginMultiple: runIfType<BeginMultipleMessage>(x, "BeginMultipleMessage"),
   pool: runIfType<PoolMessage>(x, "PoolMessage"),
+  update: runIfType<UpdateMessage>(x, "UpdateMessage"),
 });

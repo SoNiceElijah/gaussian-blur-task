@@ -2,11 +2,17 @@ import { createGaussian } from "../math/gaussian";
 import { create, is } from "../messages/messages";
 import { receive } from "./worker";
 
-function naiveBlur(
+const FLAGS_OFFSET = 8;
+
+function coopBlur(
+  idx: number,
+  count: number,
   radius: number,
   w: number,
   h: number,
   source: Uint8ClampedArray,
+  middle: Uint8ClampedArray,
+  flags: Int32Array,
   destination: Uint8ClampedArray,
   update: (chunk: number) => void,
 ) {
@@ -17,9 +23,7 @@ function naiveBlur(
     kernel.push(gaussian(i));
   }
 
-  const middle = new Uint8ClampedArray(source.length);
-
-  for (let y = 0; y < h; ++y) {
+  for (let y = idx; y < h; y += count) {
     for (let x = 0; x < w; ++x) {
       for (let c = 0; c < 4; ++c) {
         const dest = 4 * w * y + 4 * x + c;
@@ -37,13 +41,20 @@ function naiveBlur(
               : 0;
         }
 
-        middle[dest] = sum;
+        middle[dest + FLAGS_OFFSET] = sum;
       }
     }
     update(w);
   }
 
-  for (let x = 0; x < w; ++x) {
+  const original = Atomics.add(flags, 1, 1);
+  if (original === count - 1) {
+    Atomics.store(flags, 0, 1);
+    Atomics.notify(flags, 0);
+  }
+  while (Atomics.wait(flags, 0, 0) !== "not-equal");
+
+  for (let x = idx; x < w; x += count) {
     for (let y = 0; y < h; ++y) {
       for (let c = 0; c < 4; ++c) {
         const dest = 4 * w * y + 4 * x + c;
@@ -56,7 +67,7 @@ function naiveBlur(
           const idx = dest + 4 * w * i;
           sum +=
             idx > 0 && idx < middle.length
-              ? middle[idx] * kernel[i + radius]
+              ? middle[idx + FLAGS_OFFSET] * kernel[i + radius]
               : 0;
         }
         destination[dest] = sum;
@@ -67,15 +78,16 @@ function naiveBlur(
 }
 
 onmessage = receive(({ send, data, info }) => {
-  if (info.workerIdx !== 0) {
-    return send(create.message.done(true));
-  }
-  const found = is(data).beginSingle((description) => {
-    naiveBlur(
+  const found = is(data).beginMultiple((description) => {
+    coopBlur(
+      info.workerIdx,
+      info.workerCount,
       description.radius,
       description.width,
       description.height,
       new Uint8ClampedArray(description.source),
+      new Uint8ClampedArray(description.middle),
+      new Int32Array(description.middle),
       new Uint8ClampedArray(description.destination),
       (chunk) => send(create.message.update(chunk)),
     );

@@ -6,10 +6,12 @@ body {
   display: flex;
   gap: 10px;
   padding: 10px;
+  flex-wrap: wrap;
 }
 
 .presentation canvas {
   width: 100%;
+  min-width: 300px;
 }
 
 .canvas-box {
@@ -30,7 +32,15 @@ body {
   gap: 10px;
 }
 
+.controllers-buttons {
+  display: flex;
+  gap: 10px;
+}
+
 .controllers button {
+  overflow: hidden;
+
+  position: relative;
   font: inherit;
 
   border-radius: 5px;
@@ -56,6 +66,10 @@ body {
 .controllers button:active {
   transition: 0s;
   background-color: #1a63e2;
+}
+
+.controllers button:disabled {
+  background-color: #cdcdcd;
 }
 
 .controllers input[type="file"] {
@@ -97,4 +111,46 @@ input:focus + .img-uploader-label {
   outline: solid;
   outline-color: #000000;
   outline-offset: 1px;
+}
+
+input:disabled + .img-uploader-label {
+  background-color: #cdcdcd;
+}
+
+input[type="number"] {
+  font: inherit;
+  border-radius: 5px;
+  border: 1px solid #000;
+  padding: 5px 10px 5px 10px;
+}
+
+input[type="number"]:focus {
+  outline: solid;
+  outline-color: #000000;
+  outline-offset: 1px;
+}
+
+.loading-bar {
+  position: relative;
+  height: 15px;
+  width: 500px;
+
+  border-radius: 4px;
+  overflow: hidden;
+
+  background-color: #f1f1f1;
+}
+
+#loadingBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  transition: 0.2s;
+  background-color: #1ae24f;
+}
+
+#app {
+  padding-top: 10px;
+  padding-bottom: 20px;
 }

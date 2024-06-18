@@ -8,24 +8,38 @@ function panic(msg?: string): never {
   throw new Error(msg ?? "CRUSH");
 }
 
-const WORKER_PATH = "./workers/singleWorker.ts";
+interface UIElements {
+  beginButton: HTMLButtonElement;
+  uploadInput: HTMLInputElement;
+  uploadButton: HTMLElement;
+  loadBar: HTMLElement;
+  radiusInput: HTMLInputElement;
+  originalCanvas: HTMLCanvasElement;
+  blurredCanvas: HTMLCanvasElement;
+}
 
-const pool = new WorkerPool(WORKER_PATH);
-let imageUploading = false;
-let hasUploadedImage = false;
+interface DrawContext {
+  original: CanvasRenderingContext2D;
+  blurred: CanvasRenderingContext2D;
+}
 
-function watchUpload(
-  input: HTMLInputElement,
-  canvas: HTMLCanvasElement,
-  blurred: HTMLCanvasElement,
-) {
-  const context = canvas.getContext("2d");
-  if (!context) {
-    panic("Can not create canvas context!");
-  }
+interface AppState {
+  imageUploading: boolean;
+  hasUploadedImage: boolean;
+}
 
-  input.addEventListener("change", () => {
-    const { files } = input;
+interface Context {
+  elements: UIElements;
+  context: DrawContext;
+  state: AppState;
+  pool: WorkerPool;
+}
+
+const WORKER_PATH = "./workers/coopWorker.ts";
+
+function watchUpload(context: Context) {
+  context.elements.uploadInput.addEventListener("change", () => {
+    const { files } = context.elements.uploadInput;
     if (files && files.length > 0) {
       const [file] = files;
       const url = URL.createObjectURL(file);
@@ -33,61 +47,69 @@ function watchUpload(
       const img = new Image();
       img.src = url;
 
-      imageUploading = true;
+      context.state.imageUploading = true;
 
       img.onload = () => {
         URL.revokeObjectURL(url);
 
+        const canvas = context.elements.originalCanvas;
+
         canvas.width = img.width;
         canvas.height = img.height;
 
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.context.original.clearRect(0, 0, canvas.width, canvas.height);
 
-        context.drawImage(img, 0, 0, img.width, img.height);
-        hasUploadedImage = true;
-        imageUploading = false;
+        context.context.original.drawImage(img, 0, 0, img.width, img.height);
+        context.state.hasUploadedImage = true;
+        context.elements.beginButton.disabled = false;
+        context.state.imageUploading = false;
 
-        blurred.width = 0;
-        blurred.height = 0;
+        context.context.blurred.clearRect(
+          0,
+          0,
+          context.elements.blurredCanvas.width,
+          context.elements.blurredCanvas.height,
+        );
+
+        context.elements.blurredCanvas.width = img.width;
+        context.elements.blurredCanvas.height = img.height;
       };
 
       img.onerror = () => {
-        imageUploading = false;
+        context.state.imageUploading = false;
       };
     }
   });
 }
 
-function watchStart(
-  button: HTMLButtonElement,
-  original: HTMLCanvasElement,
-  blurred: HTMLCanvasElement,
-) {
-  const originalContext = original.getContext("2d");
-  const blurredContext = blurred.getContext("2d");
-
-  if (!originalContext) {
-    panic("Can not create canvas context!");
-  }
-  if (!blurredContext) {
-    panic("Can not create canvas context!");
-  }
-
-  button.addEventListener("click", async () => {
-    if (!hasUploadedImage && imageUploading) {
+function watchStart(context: Context) {
+  context.elements.beginButton.addEventListener("click", async () => {
+    if (!context.state.hasUploadedImage && context.state.imageUploading) {
       alert("Image uploading...");
       return;
     }
 
-    if (!hasUploadedImage) {
+    if (!context.state.hasUploadedImage) {
       alert("No uploaded image!");
       return;
     }
 
-    const w = original.width;
-    const h = original.height;
+    const radiusText = context.elements.radiusInput.value;
+    const radius = parseInt(radiusText);
+    if (Number.isNaN(radius)) {
+      alert(`Radius can not be "${radiusText}"`);
+      return;
+    }
 
-    const imageData = originalContext.getImageData(0, 0, w, h);
+    if (radius <= 1 || radius >= 10000) {
+      alert(`Radius out of bounds [1:${10000}]`);
+      return;
+    }
+
+    const w = context.elements.originalCanvas.width;
+    const h = context.elements.originalCanvas.height;
+
+    const imageData = context.context.original.getImageData(0, 0, w, h);
 
     const sourceMemory = new SharedArrayBuffer(imageData.data.length);
     const destinationMemory = new SharedArrayBuffer(imageData.data.length);
@@ -95,52 +117,119 @@ function watchStart(
     const array = new Uint8ClampedArray(sourceMemory);
     array.set(imageData.data);
 
-    const status = await pool.submit(
-      create.message.begin(
-        {
-          radius: 5,
-          width: w,
-          height: h,
+    const middleSource = new SharedArrayBuffer(imageData.data.length + 8);
+
+    const startTime = Date.now();
+    console.log("RUNNING");
+    let statusSum = 0;
+    const workSize = 2 * w * h;
+
+    context.elements.beginButton.disabled = true;
+    context.elements.uploadInput.disabled = true;
+    context.elements.loadBar.style.width = "0";
+    context.elements.loadBar.style.opacity = "1.0";
+
+    context.pool
+      .submit(
+        create.message.beginCoop(
+          {
+            radius,
+            width: w,
+            height: h,
+          },
+          sourceMemory,
+          middleSource,
+          destinationMemory,
+        ),
+        (chunk) => {
+          statusSum += chunk;
+          const wd = Math.round((100 * statusSum) / workSize);
+          context.elements.loadBar.style.width = `${wd}%`;
         },
-        sourceMemory,
-        destinationMemory,
-      ),
-    );
+      )
+      .then((status) => {
+        const finalTime = Date.now();
+        console.log("TIME:", finalTime - startTime);
 
-    if (!status) {
-      panic("Can not blur!");
-    }
+        if (!status) {
+          panic("Can not blur!");
+        }
 
-    const arr = new Uint8ClampedArray(destinationMemory.byteLength);
-    arr.set(new Uint8ClampedArray(destinationMemory));
+        const arr = new Uint8ClampedArray(destinationMemory.byteLength);
+        arr.set(new Uint8ClampedArray(destinationMemory));
 
-    const data = new ImageData(arr, original.width, original.height);
+        const original = context.elements.originalCanvas;
+        const data = new ImageData(arr, original.width, original.height);
 
-    blurred.width = w;
-    blurred.height = h;
+        const blurred = context.elements.blurredCanvas;
+        blurred.width = w;
+        blurred.height = h;
 
-    blurredContext.clearRect(0, 0, blurred.width, blurred.height);
-
-    blurredContext.putImageData(data, 0, 0);
+        context.context.blurred.clearRect(0, 0, blurred.width, blurred.height);
+        context.context.blurred.putImageData(data, 0, 0);
+      })
+      .finally(() => {
+        context.elements.beginButton.disabled = false;
+        context.elements.uploadInput.disabled = false;
+        context.elements.loadBar.style.opacity = "0.0";
+      });
   });
 }
 
 function main() {
-  const uploader = document.getElementById(
+  const uploadInput = document.getElementById(
     "imageUploadInput",
   )! as HTMLInputElement;
-  const originalImageCanvas = document.getElementById(
+  const originalCanvas = document.getElementById(
     "originalImage",
   )! as HTMLCanvasElement;
-  const blurredImageCanvas = document.getElementById(
+  const blurredCanvas = document.getElementById(
     "blurredImage",
   )! as HTMLCanvasElement;
-  const startButton = document.getElementById(
+  const beginButton = document.getElementById(
     "blurButton",
   )! as HTMLButtonElement;
+  const loadBar = document.getElementById("loadingBar")!;
+  const radiusInput = document.getElementById(
+    "radiusInput",
+  )! as HTMLInputElement;
+  const uploadButton = document.getElementById(
+    "uploadButton",
+  )! as HTMLLabelElement;
 
-  watchUpload(uploader, originalImageCanvas, blurredImageCanvas);
-  watchStart(startButton, originalImageCanvas, blurredImageCanvas);
+  const original = originalCanvas.getContext("2d");
+  if (!original) {
+    panic("Can not create canvas context!");
+  }
+
+  const blurred = blurredCanvas.getContext("2d");
+  if (!blurred) {
+    panic("Can not create canvas context!");
+  }
+
+  const context: Context = {
+    elements: {
+      beginButton,
+      uploadInput,
+      uploadButton,
+      loadBar,
+      radiusInput,
+      originalCanvas,
+      blurredCanvas,
+    },
+    context: {
+      original,
+      blurred,
+    },
+    pool: new WorkerPool(WORKER_PATH),
+    state: {
+      hasUploadedImage: false,
+      imageUploading: false,
+    },
+  };
+
+  watchUpload(context);
+  watchStart(context);
 }
 
 window.onload = main;
