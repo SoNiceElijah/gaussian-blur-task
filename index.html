@@ -6,7 +6,11 @@
     <title>Blur</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <canvas width="500px" height="500px" id="originalImage"></canvas>
+      <canvas width="500px" height="500px" id="bluredImage"></canvas>
+      <input type="file" id="imageUploadInput" name="uploadedImage" accept="image/*" />
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
