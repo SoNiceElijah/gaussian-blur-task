@@ -1,46 +1,23 @@
-const workers: Worker[] = [];
+import { create } from "./messages/messages";
+import { WorkerPool } from "./pool";
 
-function initWorkers() {
-  const worker = new Worker(
-    new URL("./workers/gaussianBlurWorker.ts", import.meta.url),
-  );
-  workers.push(worker);
+function panic(msg?: string): never {
+  alert("CRUSHED");
+  throw new Error(msg ?? "CRUSH");
 }
 
-function sendMemory(
-  payload: [number, number, SharedArrayBuffer, SharedArrayBuffer],
-  done: () => void,
-) {
-  for (const worker of workers) {
-    worker.postMessage(payload);
-    worker.onmessage = done;
-  }
-}
+const pool = new WorkerPool("./workers/gaussianBlurWorker.ts", 1);
+let imageUploading = false;
+let hasUploadedImage = false;
 
-function addListeners() {
-  const uploader = document.getElementById(
-    "imageUploadInput",
-  )! as HTMLInputElement;
-  const originalImageCanvas = document.getElementById(
-    "originalImage",
-  )! as HTMLCanvasElement;
-  const bluredImageCanvas = document.getElementById(
-    "bluredImage",
-  )! as HTMLCanvasElement;
-
-  const originalContext = originalImageCanvas.getContext("2d");
-  if (!originalContext) {
-    return console.error("CRUSH");
+function watchUpload(input: HTMLInputElement, canvas: HTMLCanvasElement) {
+  const context = canvas.getContext("2d");
+  if (!context) {
+    panic("Can not create canvas context!");
   }
 
-  const bluredContext = bluredImageCanvas.getContext("2d");
-  if (!bluredContext) {
-    return console.error("CRUSH");
-  }
-
-  uploader.onchange = () => {
-    const { files } = uploader;
-
+  input.addEventListener("change", () => {
+    const { files } = input;
     if (files && files.length > 0) {
       const [file] = files;
       const url = URL.createObjectURL(file);
@@ -48,60 +25,111 @@ function addListeners() {
       const img = new Image();
       img.src = url;
 
+      imageUploading = true;
+
       img.onload = () => {
         URL.revokeObjectURL(url);
 
-        originalContext.clearRect(
-          0,
-          0,
-          originalImageCanvas.width,
-          originalImageCanvas.height,
-        );
+        canvas.width = img.width;
+        canvas.height = img.height;
 
-        let k = 1.0;
-        if (img.width < img.height) {
-          k = originalImageCanvas.height / img.height;
-        } else {
-          k = originalImageCanvas.width / img.width;
-        }
-        const w = Math.round(img.width * k);
-        const h = Math.round(img.height * k);
+        context.clearRect(0, 0, canvas.width, canvas.height);
 
-        originalContext.drawImage(img, 0, 0, w, h);
+        context.drawImage(img, 0, 0, img.width, img.height);
+        hasUploadedImage = true;
+        imageUploading = false;
+      };
 
-        const imageData = originalContext.getImageData(0, 0, w, h);
-
-        const sourceMemory = new SharedArrayBuffer(imageData.data.length);
-        const destinationMemory = new SharedArrayBuffer(imageData.data.length);
-
-        const ta = new Uint8ClampedArray(sourceMemory);
-        ta.set(imageData.data);
-
-        sendMemory([w, h, sourceMemory, destinationMemory], () => {
-          const arr = new Uint8ClampedArray(destinationMemory.byteLength);
-          arr.set(new Uint8ClampedArray(destinationMemory));
-
-          console.log(destinationMemory.byteLength);
-          const data = new ImageData(arr, w, h);
-
-          console.log(data);
-
-          bluredContext.clearRect(
-            0,
-            0,
-            bluredImageCanvas.width,
-            bluredImageCanvas.height,
-          );
-          bluredContext.putImageData(data, 0, 0);
-        });
+      img.onerror = () => {
+        imageUploading = false;
       };
     }
-  };
+  });
+}
+
+function watchStart(
+  button: HTMLButtonElement,
+  original: HTMLCanvasElement,
+  blurred: HTMLCanvasElement,
+) {
+  const originalContext = original.getContext("2d");
+  const blurredContext = blurred.getContext("2d");
+
+  if (!originalContext) {
+    panic("Can not create canvas context!");
+  }
+  if (!blurredContext) {
+    panic("Can not create canvas context!");
+  }
+
+  button.addEventListener("click", async () => {
+    if (!hasUploadedImage && imageUploading) {
+      alert("Image uploading...");
+      return;
+    }
+
+    if (!hasUploadedImage) {
+      alert("No uploaded image!");
+      return;
+    }
+
+    const w = original.width;
+    const h = original.height;
+
+    const imageData = originalContext.getImageData(0, 0, w, h);
+
+    const sourceMemory = new SharedArrayBuffer(imageData.data.length);
+    const destinationMemory = new SharedArrayBuffer(imageData.data.length);
+
+    const array = new Uint8ClampedArray(sourceMemory);
+    array.set(imageData.data);
+
+    const status = await pool.submit(
+      create.message.begin(
+        {
+          radius: 5,
+          width: w,
+          height: h,
+        },
+        sourceMemory,
+        destinationMemory,
+      ),
+    );
+
+    if (!status) {
+      panic("Can not blur!");
+    }
+
+    const arr = new Uint8ClampedArray(destinationMemory.byteLength);
+    arr.set(new Uint8ClampedArray(destinationMemory));
+
+    const data = new ImageData(arr, original.width, original.height);
+
+    blurred.width = w;
+    blurred.height = h;
+
+    blurredContext.clearRect(0, 0, blurred.width, blurred.height);
+
+    blurredContext.putImageData(data, 0, 0);
+  });
 }
 
 function main() {
-  initWorkers();
-  addListeners();
+  const uploader = document.getElementById(
+    "imageUploadInput",
+  )! as HTMLInputElement;
+  const originalImageCanvas = document.getElementById(
+    "originalImage",
+  )! as HTMLCanvasElement;
+  const blurredImageCanvas = document.getElementById(
+    "blurredImage",
+  )! as HTMLCanvasElement;
+  const startButton = document.getElementById(
+    "blurButton",
+  )! as HTMLButtonElement;
+
+  watchUpload(uploader, originalImageCanvas);
+  watchStart(startButton, originalImageCanvas, blurredImageCanvas);
 }
 
 window.onload = main;

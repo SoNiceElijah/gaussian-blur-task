@@ -1,8 +1,8 @@
-function gaussian(K: number, sigma2: number, x: number) {
-  return K * Math.exp(-(x * x) / (2 * sigma2));
-}
+import { createGaussian } from "../math/gaussian";
+import { create, is } from "../messages/messages";
+import { receive } from "./poolWorker";
 
-function gaussianBlur(
+function naiveBlur(
   radius: number,
   w: number,
   h: number,
@@ -11,10 +11,9 @@ function gaussianBlur(
 ) {
   const kernel = [];
   const sigma = Math.max(radius / 2, 1);
-  const sigma2 = sigma * sigma;
-  const K = 1 / Math.sqrt(2 * Math.PI * sigma * sigma);
+  const gaussian = createGaussian(sigma);
   for (let i = -radius; i <= radius; ++i) {
-    kernel.push(gaussian(K, sigma2, i));
+    kernel.push(gaussian(i));
   }
 
   const middle = new Uint8ClampedArray(source.length);
@@ -64,19 +63,18 @@ function gaussianBlur(
   }
 }
 
-onmessage = (msg) => {
-  const [w, h, src, dst] = msg.data as [
-    number,
-    number,
-    SharedArrayBuffer,
-    SharedArrayBuffer,
-  ];
-  gaussianBlur(
-    200,
-    w,
-    h,
-    new Uint8ClampedArray(src),
-    new Uint8ClampedArray(dst),
-  );
-  postMessage("DONE!");
-};
+onmessage = receive(({ send, data }) => {
+  const found = is(data).begin((description) => {
+    naiveBlur(
+      description.radius,
+      description.width,
+      description.height,
+      new Uint8ClampedArray(description.source),
+      new Uint8ClampedArray(description.destination),
+    );
+    send(create.message.done(true));
+  });
+  if (!found) {
+    send(create.message.done(false));
+  }
+});
