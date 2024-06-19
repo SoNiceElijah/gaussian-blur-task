@@ -13,21 +13,28 @@ export class WorkerPool {
   private workers: Worker[] = [];
   private jobs: Job[] = [];
 
+  private broken = false;
+
   private cleanups: (() => void)[] = [];
 
-  constructor(instance: string, size?: number) {
-    this.init(instance, size);
+  constructor(size?: number) {
+    this.init(size);
   }
 
-  private init(instance: string, size?: number) {
+  private init(size?: number) {
     const n = size === undefined ? navigator.hardwareConcurrency - 1 : size;
 
     for (let i = 0; i < n; ++i) {
-      this.workers.push(
-        new Worker(new URL(instance, import.meta.url), {
+      const w = new Worker(
+        new URL("./workers/coopWorker.ts", import.meta.url),
+        {
           type: "module",
-        }),
+        },
       );
+      w.onerror = () => {
+        this.broken = true;
+      };
+      this.workers.push(w);
     }
 
     for (const w of this.workers) {
@@ -60,6 +67,9 @@ export class WorkerPool {
 
   submit(msg: unknown, update?: (chunk: number) => void): Promise<boolean> {
     return new Promise((resolve, reject) => {
+      if (this.broken) {
+        return reject(new Error("Pool is broken"));
+      }
       const id = WorkerPool.jobId++;
       this.jobs.push({
         id,
@@ -76,9 +86,9 @@ export class WorkerPool {
     });
   }
 
-  switch(instance: string, size?: number) {
+  switch(size?: number) {
     this.destroy();
-    this.init(instance, size);
+    this.init(size);
   }
 
   destroy() {

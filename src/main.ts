@@ -4,7 +4,7 @@ import { create } from "./messages/messages";
 import { WorkerPool } from "./pool";
 
 function panic(msg?: string): never {
-  alert("CRUSHED");
+  alert(msg ?? "CRUSHED");
   throw new Error(msg ?? "CRUSH");
 }
 
@@ -12,6 +12,7 @@ interface UIElements {
   beginButton: HTMLButtonElement;
   uploadInput: HTMLInputElement;
   uploadButton: HTMLElement;
+  urlButton: HTMLButtonElement;
   loadBar: HTMLElement;
   radiusInput: HTMLInputElement;
   originalCanvas: HTMLCanvasElement;
@@ -35,7 +36,48 @@ interface Context {
   pool: WorkerPool;
 }
 
-const WORKER_PATH = "./workers/coopWorker.ts";
+function upload(context: Context, url: string) {
+  const img = new Image();
+
+  // so we can process any image
+  // maybe better remove this
+  img.crossOrigin = "";
+
+  img.src = url;
+
+  context.state.imageUploading = true;
+
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+
+    const canvas = context.elements.originalCanvas;
+
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    context.context.original.clearRect(0, 0, canvas.width, canvas.height);
+
+    context.context.original.drawImage(img, 0, 0, img.width, img.height);
+    context.state.hasUploadedImage = true;
+    context.elements.beginButton.disabled = false;
+    context.state.imageUploading = false;
+
+    context.context.blurred.clearRect(
+      0,
+      0,
+      context.elements.blurredCanvas.width,
+      context.elements.blurredCanvas.height,
+    );
+
+    context.elements.blurredCanvas.width = img.width;
+    context.elements.blurredCanvas.height = img.height;
+  };
+
+  img.onerror = (e) => {
+    context.state.imageUploading = false;
+    console.error(e);
+  };
+}
 
 function watchUpload(context: Context) {
   context.elements.uploadInput.addEventListener("change", () => {
@@ -44,40 +86,14 @@ function watchUpload(context: Context) {
       const [file] = files;
       const url = URL.createObjectURL(file);
 
-      const img = new Image();
-      img.src = url;
+      upload(context, url);
+    }
+  });
 
-      context.state.imageUploading = true;
-
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-
-        const canvas = context.elements.originalCanvas;
-
-        canvas.width = img.width;
-        canvas.height = img.height;
-
-        context.context.original.clearRect(0, 0, canvas.width, canvas.height);
-
-        context.context.original.drawImage(img, 0, 0, img.width, img.height);
-        context.state.hasUploadedImage = true;
-        context.elements.beginButton.disabled = false;
-        context.state.imageUploading = false;
-
-        context.context.blurred.clearRect(
-          0,
-          0,
-          context.elements.blurredCanvas.width,
-          context.elements.blurredCanvas.height,
-        );
-
-        context.elements.blurredCanvas.width = img.width;
-        context.elements.blurredCanvas.height = img.height;
-      };
-
-      img.onerror = () => {
-        context.state.imageUploading = false;
-      };
+  context.elements.urlButton.addEventListener("click", () => {
+    const answer = prompt("Enter url");
+    if (answer !== null) {
+      upload(context, answer);
     }
   });
 }
@@ -126,6 +142,7 @@ function watchStart(context: Context) {
 
     context.elements.beginButton.disabled = true;
     context.elements.uploadInput.disabled = true;
+    context.elements.urlButton.disabled = true;
     context.elements.loadBar.style.width = "0";
     context.elements.loadBar.style.opacity = "1.0";
 
@@ -168,9 +185,13 @@ function watchStart(context: Context) {
         context.context.blurred.clearRect(0, 0, blurred.width, blurred.height);
         context.context.blurred.putImageData(data, 0, 0);
       })
+      .catch(() => {
+        panic("Pool is unavailable!");
+      })
       .finally(() => {
         context.elements.beginButton.disabled = false;
         context.elements.uploadInput.disabled = false;
+        context.elements.urlButton.disabled = false;
         context.elements.loadBar.style.opacity = "0.0";
       });
   });
@@ -196,6 +217,7 @@ function main() {
   const uploadButton = document.getElementById(
     "uploadButton",
   )! as HTMLLabelElement;
+  const urlButton = document.getElementById("urlButton")! as HTMLButtonElement;
 
   const original = originalCanvas.getContext("2d");
   if (!original) {
@@ -216,12 +238,13 @@ function main() {
       radiusInput,
       originalCanvas,
       blurredCanvas,
+      urlButton,
     },
     context: {
       original,
       blurred,
     },
-    pool: new WorkerPool(WORKER_PATH),
+    pool: new WorkerPool(),
     state: {
       hasUploadedImage: false,
       imageUploading: false,
