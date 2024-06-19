@@ -36,7 +36,7 @@ function coopBlur(
           }
           const idx = dest + 4 * i;
           sum +=
-            idx > 0 && idx < source.length
+            idx >= 0 && idx < source.length
               ? source[idx] * kernel[i + radius]
               : 0;
         }
@@ -66,7 +66,7 @@ function coopBlur(
           }
           const idx = dest + 4 * w * i;
           sum +=
-            idx > 0 && idx < middle.length
+            idx >= 0 && idx < middle.length - FLAGS_OFFSET
               ? middle[idx + FLAGS_OFFSET] * kernel[i + radius]
               : 0;
         }
